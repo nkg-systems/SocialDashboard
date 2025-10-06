@@ -2,58 +2,129 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-  }
+/* SM3D Dark Theme Implementation */
+:root {
+  /* SM3D Color Palette */
+  --sm3d-background: #0E0E0E;
+  --sm3d-surface: #121212;
+  --sm3d-border: #262626;
+  --sm3d-accent: #E50914;
+  --sm3d-text-primary: #FFFFFF;
+  --sm3d-text-secondary: #AAAAAA;
+  --sm3d-text-muted: #666666;
+  --sm3d-success: #10B981;
+  --sm3d-warning: #F59E0B;
+  --sm3d-error: #EF4444;
+  --sm3d-info: #3B82F6;
 }
 
 @layer base {
   * {
-    @apply border-border;
+    box-sizing: border-box;
   }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
   body {
-    @apply bg-background text-foreground;
+    @apply antialiased;
+    background: var(--sm3d-background);
+    color: var(--sm3d-text-primary);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
   }
+  
+  /* Scrollbar Styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: var(--sm3d-surface);
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: var(--sm3d-border);
+    border-radius: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--sm3d-text-muted);
+  }
+}
+
+/* SM3D Component Base Styles */
+@layer components {
+  .sm3d-card {
+    @apply bg-surface border border-border rounded-card p-6 shadow-card;
+  }
+  
+  .sm3d-button {
+    @apply px-6 py-3 rounded-button font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background;
+  }
+  
+  .sm3d-button-primary {
+    @apply bg-accent text-white hover:opacity-90 focus:ring-accent;
+  }
+  
+  .sm3d-button-secondary {
+    @apply bg-surface text-text-primary border border-border hover:bg-border focus:ring-border;
+  }
+  
+  .sm3d-input {
+    @apply bg-surface border border-border rounded-button px-4 py-3 text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent;
+  }
+  
+  .sm3d-text-h1 {
+    @apply text-h1 font-bold text-text-primary;
+  }
+  
+  .sm3d-text-h2 {
+    @apply text-h2 font-semibold text-text-primary;
+  }
+  
+  .sm3d-text-body {
+    @apply text-body text-text-secondary;
+  }
+  
+  .sm3d-text-caption {
+    @apply text-caption text-text-muted;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
 }
