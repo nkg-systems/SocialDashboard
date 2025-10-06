@@ -15,30 +15,39 @@
 ### Development Setup
 
 1. **Clone the repository**
-   ```bash
+   ```powershell
    git clone <repository-url>
    cd SocialDashboard
+   git checkout InitialImplementation
    ```
 
 2. **Backend Setup**
-   ```bash
+   ```powershell
    cd backend
-   cp .env.example .env
+   copy .env.example .env
+   # Edit .env with your configuration
    pip install -r requirements.txt
-   uvicorn app.main:app --reload
+   
+   # Run database migrations (when database is ready)
+   alembic upgrade head
+   
+   # Start the API server
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
 3. **Frontend Setup**
-   ```bash
+   ```powershell
    cd frontend
    npm install
+   
+   # Start development server
    npm run dev
    ```
 
 4. **Using Docker (Recommended)**
-   ```bash
+   ```powershell
    cd docker
-   docker-compose -f docker-compose.dev.yml up
+   docker-compose -f docker-compose.dev.yml up --build
    ```
 
 ## 🌟 Features
@@ -62,7 +71,8 @@
 - [📖 **Project Overview**](./Docs/README.md) - Detailed project information
 - [🏛️ **System Architecture**](./Docs/ARCHITECTURE.md) - Technical architecture and design
 - [✅ **Implementation Status**](./Docs/IMPLEMENTATION_STATUS.md) - Current progress and completion status
-- [📋 **API Documentation**](./Docs/api/) - API endpoints and usage
+- [📋 **Project Documentation**](./Docs/warp.md) - SM3D project specifications and guidelines
+- [📄 **Design Document**](./Docs/SM3D_Design_and_PRD.pdf) - Original design and PRD
 
 ## 🛠️ Tech Stack
 
@@ -105,10 +115,14 @@
 
 ## 🚦 Getting Started
 
-1. **Set up your environment** using the Docker development stack
-2. **Configure OAuth credentials** for your social media platforms
-3. **Run database migrations** to set up the schema
-4. **Start the development servers** and begin building
+1. **Switch to the implementation branch**: `git checkout InitialImplementation`
+2. **Set up your environment** using the Docker development stack
+3. **Configure OAuth credentials** in the `.env` file for your social media platforms
+4. **Run database migrations** to set up the schema: `alembic upgrade head`
+5. **Access the application**:
+   - Backend API: http://localhost:8000
+   - API Documentation: http://localhost:8000/api/v1/docs
+   - Frontend (when complete): http://localhost:3000
 
 ## 🤝 Contributing
 
