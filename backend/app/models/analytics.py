@@ -4,17 +4,17 @@ Analytics data database model.
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, BigInteger, ForeignKey, Float, Index
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.core.db_utils import GUID
 
 
 class AnalyticsData(Base):
     __tablename__ = "analytics_data"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    social_account_id = Column(UUID(as_uuid=True), ForeignKey("social_accounts.id"), nullable=False)
-    post_id = Column(UUID(as_uuid=True), ForeignKey("posts.id"), nullable=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    social_account_id = Column(GUID(), ForeignKey("social_accounts.id"), nullable=False)
+    post_id = Column(GUID(), ForeignKey("posts.id"), nullable=True)
     metric_type = Column(String(50), nullable=False)  # followers, likes, shares, comments, etc.
     metric_value = Column(BigInteger, nullable=False)
     metric_change = Column(Float, nullable=True)  # Change from previous period
