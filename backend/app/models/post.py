@@ -4,21 +4,21 @@ Post database model.
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Text, ForeignKey, JSON, Integer, Boolean
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.core.db_utils import GUID
 
 
 class Post(Base):
     __tablename__ = "posts"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    social_account_id = Column(UUID(as_uuid=True), ForeignKey("social_accounts.id"), nullable=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(GUID(), ForeignKey("users.id"), nullable=False)
+    social_account_id = Column(GUID(), ForeignKey("social_accounts.id"), nullable=True)
     content = Column(Text, nullable=False)
-    media_urls = Column(ARRAY(String), nullable=True, default=[])
-    hashtags = Column(ARRAY(String), nullable=True, default=[])
-    mentions = Column(ARRAY(String), nullable=True, default=[])
+    media_urls = Column(JSON, nullable=True, default=[])
+    hashtags = Column(JSON, nullable=True, default=[])
+    mentions = Column(JSON, nullable=True, default=[])
     scheduled_at = Column(DateTime, nullable=True)
     published_at = Column(DateTime, nullable=True)
     status = Column(String(20), default="draft")  # draft, scheduled, published, failed
