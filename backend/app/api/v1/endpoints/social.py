@@ -12,6 +12,12 @@ from app.api import deps
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.oauth_state_store import oauth_state_store
+from app.core.validation import (
+    InputValidator, 
+    ValidationError,
+    OAuthCallbackValidator,
+    AccountRequestValidator
+)
 from app.models.user import User
 from app.models.social_account import SocialAccount
 from app.services.oauth_service import OAuth2Service
@@ -135,11 +141,14 @@ def initiate_oauth_connection(
     db: Session = Depends(get_db),
 ):
     """Initiate OAuth connection to a social media platform."""
+    # Validate platform parameter
+    try:
+        platform = InputValidator.validate_platform(platform)
+    except ValidationError as e:
+        raise e
+    
     if platform not in oauth_service.PLATFORMS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported platform: {platform}"
-        )
+        raise ValidationError("Unsupported social platform")
     
     # Check if user already has this platform connected
     existing = db.query(SocialAccount).filter(
@@ -149,10 +158,7 @@ def initiate_oauth_connection(
     ).first()
     
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Already connected to {platform}"
-        )
+        raise ValidationError("Platform account already connected")
     
     # Generate dynamic OAuth URL based on request
     base_url = str(request.base_url).rstrip('/')
@@ -162,26 +168,34 @@ def initiate_oauth_connection(
     
     redirect_uri = f"{base_url}{settings.API_V1_STR}/social/callback/{platform}"
     
-    auth_url, state, code_verifier = oauth_service.get_authorization_url(
-        platform=platform,
-        redirect_uri=redirect_uri,
-        user_id=str(current_user.id)
-    )
-    
-    # Securely store state and code_verifier for CSRF protection
-    oauth_state_store.store_state(
-        state=state,
-        user_id=str(current_user.id),
-        platform=platform,
-        code_verifier=code_verifier,
-        redirect_uri=redirect_uri
-    )
-    
-    return ConnectResponse(
-        auth_url=auth_url,
-        state=state,
-        platform=platform
-    )
+    try:
+        auth_url, state, code_verifier = oauth_service.get_authorization_url(
+            platform=platform,
+            redirect_uri=redirect_uri,
+            user_id=str(current_user.id)
+        )
+        
+        # Securely store state and code_verifier for CSRF protection
+        oauth_state_store.store_state(
+            state=state,
+            user_id=str(current_user.id),
+            platform=platform,
+            code_verifier=code_verifier,
+            redirect_uri=redirect_uri
+        )
+        
+        return ConnectResponse(
+            auth_url=auth_url,
+            state=state,
+            platform=platform
+        )
+        
+    except Exception as e:
+        sanitized_error = InputValidator.sanitize_error_message(e, "oauth_initiation")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=sanitized_error
+        )
 
 
 @router.get("/callback/{platform}")
@@ -193,26 +207,27 @@ async def oauth_callback(
     db: Session = Depends(get_db),
 ):
     """Handle OAuth callback from social media platforms."""
+    # Validate request parameters
+    try:
+        req = OAuthCallbackValidator(platform=platform, code=code, state=state, error=error)
+        platform = req.platform
+        code = req.code
+        state = req.state
+        error = req.error
+    except ValidationError as e:
+        raise e
+    
     if error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"OAuth error: {error}"
-        )
+        raise ValidationError("OAuth authorization was denied")
     
     if platform not in oauth_service.PLATFORMS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported platform: {platform}"
-        )
+        raise ValidationError("Unsupported social platform")
     
     # Validate and retrieve state data for CSRF protection
     state_data = oauth_state_store.get_and_remove_state(state)
     
     if not state_data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired OAuth state parameter"
-        )
+        raise ValidationError("OAuth session expired or invalid")
     
     user_id = state_data["user_id"]
     code_verifier = state_data["code_verifier"]
@@ -221,18 +236,12 @@ async def oauth_callback(
     
     # Validate platform matches
     if stored_platform != platform:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Platform mismatch in OAuth callback"
-        )
+        raise ValidationError("OAuth session validation failed")
     
     # Verify user exists
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+        raise ValidationError("Authentication required")
     
     try:
         # Exchange code for tokens using stored redirect URI
@@ -280,10 +289,7 @@ async def oauth_callback(
         ).first()
         
         if existing_account and existing_account.user_id != user.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"This {platform} account is already connected to another user"
-            )
+            raise ValidationError("Social account already in use")
         
         # Encrypt tokens before storing
         encrypted_access_token = oauth_service.encrypt_token(access_token, user_id)
@@ -333,11 +339,15 @@ async def oauth_callback(
             "account_id": str(social_account.id)
         }
         
+    except ValidationError:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
+        sanitized_error = InputValidator.sanitize_error_message(e, "oauth_callback")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to connect to {platform}: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=sanitized_error
         )
 
 
@@ -348,16 +358,19 @@ def disconnect_account(
     db: Session = Depends(get_db),
 ):
     """Disconnect a social media account."""
+    # Validate account ID
+    try:
+        account_id = InputValidator.validate_account_id(account_id)
+    except ValidationError as e:
+        raise e
+        
     account = db.query(SocialAccount).filter(
         SocialAccount.id == account_id,
         SocialAccount.user_id == current_user.id
     ).first()
     
     if not account:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Social account not found"
-        )
+        raise ValidationError("Social account not found")
     
     account.is_active = False
     db.commit()
@@ -372,6 +385,12 @@ async def sync_account(
     db: Session = Depends(get_db),
 ):
     """Manually sync data from a social media account."""
+    # Validate account ID
+    try:
+        account_id = InputValidator.validate_account_id(account_id)
+    except ValidationError as e:
+        raise e
+        
     account = db.query(SocialAccount).filter(
         SocialAccount.id == account_id,
         SocialAccount.user_id == current_user.id,
@@ -379,18 +398,16 @@ async def sync_account(
     ).first()
     
     if not account:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Active social account not found"
-        )
+        raise ValidationError("Active social account not found")
     
     try:
         await social_service.sync_analytics(account, db)
-        return {"message": f"Successfully synced {account.platform} data"}
+        return {"message": "Account data synchronized successfully"}
     except Exception as e:
+        sanitized_error = InputValidator.sanitize_error_message(e, "account_sync")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to sync data: {str(e)}"
+            detail=sanitized_error
         )
 
 
@@ -401,6 +418,12 @@ async def get_account_metrics(
     db: Session = Depends(get_db),
 ):
     """Get current metrics for a social media account."""
+    # Validate account ID
+    try:
+        account_id = InputValidator.validate_account_id(account_id)
+    except ValidationError as e:
+        raise e
+        
     account = db.query(SocialAccount).filter(
         SocialAccount.id == account_id,
         SocialAccount.user_id == current_user.id,
@@ -408,10 +431,7 @@ async def get_account_metrics(
     ).first()
     
     if not account:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Active social account not found"
-        )
+        raise ValidationError("Active social account not found")
     
     try:
         metrics = await social_service.get_account_metrics(account)
@@ -422,7 +442,8 @@ async def get_account_metrics(
             "last_sync": account.last_sync_at
         }
     except Exception as e:
+        sanitized_error = InputValidator.sanitize_error_message(e, "account_metrics")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get metrics: {str(e)}"
+            detail=sanitized_error
         )
