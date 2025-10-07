@@ -4,34 +4,32 @@ import React, { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { PlatformCard } from './PlatformCard';
-
-interface Platform {
-  id: string;
-  name: string;
-  description: string;
-  brandColor: string;
-  icon: React.ReactNode;
-  features: string[];
-}
-
-interface ConnectedAccount {
-  id: string;
-  platformId: string;
-  username: string;
-  displayName: string;
-  followers: number;
-  profileImageUrl?: string;
-  lastSync: string;
-  status: 'connected' | 'error' | 'syncing';
-  permissions: string[];
-}
+import AccountManagementModal from './AccountManagementModal';
+import useSocialAccounts from '@/hooks/useSocialAccounts';
+import { SocialPlatform, ConnectedAccount } from '@/types';
 
 export const SocialAccountsPage: React.FC = () => {
-  const [loadingPlatform, setLoadingPlatform] = useState<string | null>(null);
   const [showConnectionGuide, setShowConnectionGuide] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<ConnectedAccount | null>(null);
+  const [showManagementModal, setShowManagementModal] = useState(false);
+  
+  // Use the social accounts hook for real data
+  const {
+    connectedAccounts,
+    loading,
+    connecting,
+    syncing,
+    disconnecting,
+    connectAccount,
+    disconnectAccount,
+    syncAccount,
+    syncAllAccounts,
+    error,
+    clearError,
+  } = useSocialAccounts();
 
   // Platform definitions based on your backend OAuth2 implementation
-  const platforms: Platform[] = [
+  const platforms: SocialPlatform[] = [
     {
       id: 'twitter',
       name: 'Twitter / X',
@@ -142,62 +140,12 @@ export const SocialAccountsPage: React.FC = () => {
     }
   ];
 
-  // Mock connected accounts data (replace with real API calls)
-  const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([
-    {
-      id: 'twitter-123',
-      platformId: 'twitter',
-      username: 'myhandle',
-      displayName: 'My Twitter Account',
-      followers: 12500,
-      lastSync: '2 hours ago',
-      status: 'connected',
-      permissions: ['read', 'write', 'manage']
-    },
-    {
-      id: 'instagram-456',
-      platformId: 'instagram',
-      username: 'myinstagram',
-      displayName: 'My Instagram Business',
-      followers: 8300,
-      lastSync: '1 hour ago',
-      status: 'connected',
-      permissions: ['read', 'write']
-    },
-    {
-      id: 'linkedin-789',
-      platformId: 'linkedin',
-      username: 'mycompany',
-      displayName: 'My Company Page',
-      followers: 2100,
-      lastSync: '30 minutes ago',
-      status: 'error',
-      permissions: ['read']
-    }
-  ]);
-
+  // Handler functions using the hook
   const handleConnect = async (platformId: string) => {
-    setLoadingPlatform(platformId);
-    
     try {
-      // This will integrate with your FastAPI OAuth2 endpoints
-      // For now, simulate the OAuth flow
-      console.log(`Initiating OAuth flow for ${platformId}`);
-      
-      // In real implementation:
-      // window.location.href = `/api/v1/social/connect/${platformId}`;
-      
-      // Simulate delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Mock successful connection
-      alert(`OAuth flow initiated for ${platformId}. In a real app, this would redirect to the platform's authorization page.`);
-      
+      await connectAccount(platformId);
     } catch (error) {
-      console.error('Connection error:', error);
-      alert('Failed to initiate connection. Please try again.');
-    } finally {
-      setLoadingPlatform(null);
+      // Error is handled by the hook
     }
   };
 
@@ -207,34 +155,70 @@ export const SocialAccountsPage: React.FC = () => {
     }
 
     try {
-      // This will integrate with your FastAPI disconnect endpoint
-      console.log(`Disconnecting account ${accountId}`);
-      
-      // Remove from local state
-      setConnectedAccounts(prev => prev.filter(account => account.id !== accountId));
-      
-      alert('Account disconnected successfully.');
+      await disconnectAccount(accountId);
     } catch (error) {
-      console.error('Disconnect error:', error);
-      alert('Failed to disconnect account. Please try again.');
+      // Error is handled by the hook
     }
   };
 
   const handleManage = (accountId: string) => {
-    console.log(`Managing account ${accountId}`);
-    // In real implementation, this would open account settings modal
-    alert('Account management modal would open here with permissions, sync settings, etc.');
+    const account = connectedAccounts.find(acc => acc.id === accountId);
+    if (account) {
+      setSelectedAccount(account);
+      setShowManagementModal(true);
+    }
   };
 
-  const getAccountForPlatform = (platformId: string): ConnectedAccount | null => {
+  const handleCloseModal = () => {
+    setShowManagementModal(false);
+    setSelectedAccount(null);
+  };
+
+  const handleSyncAll = async () => {
+    try {
+      await syncAllAccounts();
+    } catch (error) {
+      // Error is handled by the hook
+    }
+  };
+
+  const getAccountForPlatform = (platformId: string) => {
     return connectedAccounts.find(account => account.platformId === platformId) || null;
   };
 
   const connectedCount = connectedAccounts.length;
   const totalPlatforms = platforms.length;
 
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
+        <span className="ml-3 text-text-muted">Loading social accounts...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
+      {/* Error Display */}
+      {error && (
+        <Card className="border-error/20 bg-error/5">
+          <CardContent className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <svg className="w-5 h-5 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <span className="text-error">{error}</span>
+            </div>
+            <Button variant="ghost" size="sm" onClick={clearError}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -254,7 +238,12 @@ export const SocialAccountsPage: React.FC = () => {
             </svg>
             Connection Guide
           </Button>
-          <Button size="sm">
+          <Button 
+            size="sm" 
+            onClick={handleSyncAll}
+            isLoading={syncing === 'all'}
+            disabled={connectedAccounts.length === 0}
+          >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
@@ -388,10 +377,25 @@ export const SocialAccountsPage: React.FC = () => {
             onConnect={handleConnect}
             onDisconnect={handleDisconnect}
             onManage={handleManage}
-            isLoading={loadingPlatform === platform.id}
+            isLoading={connecting === platform.id}
+            isDisconnecting={disconnecting}
+            isSyncing={syncing}
           />
         ))}
       </div>
+
+      {/* Account Management Modal */}
+      {selectedAccount && (
+        <AccountManagementModal
+          account={selectedAccount}
+          isOpen={showManagementModal}
+          onClose={handleCloseModal}
+          onSync={syncAccount}
+          onDisconnect={disconnectAccount}
+          isSyncing={syncing === selectedAccount.id}
+          isDisconnecting={disconnecting === selectedAccount.id}
+        />
+      )}
     </div>
   );
 };

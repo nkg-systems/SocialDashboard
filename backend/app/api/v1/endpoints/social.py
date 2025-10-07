@@ -1,8 +1,9 @@
 """
 Social media integration endpoints.
 """
+import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 from app.api import deps
 from app.core.database import get_db
 from app.core.config import settings
+from app.core.oauth_state_store import oauth_state_store
 from app.models.user import User
 from app.models.social_account import SocialAccount
 from app.services.oauth_service import OAuth2Service
@@ -18,6 +20,7 @@ from app.services.social_service import SocialMediaService
 router = APIRouter()
 oauth_service = OAuth2Service()
 social_service = SocialMediaService()
+logger = logging.getLogger(__name__)
 
 
 class SocialAccountResponse(BaseModel):
@@ -39,6 +42,61 @@ class ConnectResponse(BaseModel):
     auth_url: str
     state: str
     platform: str
+
+
+def extract_profile_info(platform: str, profile_data: Dict) -> Tuple[str, str, str]:
+    """Extract platform-specific user info from profile data."""
+    try:
+        if platform == "twitter":
+            user_data = profile_data.get("data", {})
+            return (
+                user_data.get("id", ""),
+                user_data.get("username", ""),
+                user_data.get("name", "")
+            )
+        elif platform == "facebook":
+            return (
+                profile_data.get("id", ""),
+                profile_data.get("name", "").replace(" ", "").lower(),
+                profile_data.get("name", "")
+            )
+        elif platform == "instagram":
+            return (
+                profile_data.get("id", ""),
+                profile_data.get("username", ""),
+                profile_data.get("username", "")  # Instagram doesn't have display names
+            )
+        elif platform == "linkedin":
+            localized_first = profile_data.get("localizedFirstName", "")
+            localized_last = profile_data.get("localizedLastName", "")
+            return (
+                profile_data.get("id", ""),
+                f"{localized_first.lower()}{localized_last.lower()}".replace(" ", ""),
+                f"{localized_first} {localized_last}"
+            )
+        elif platform == "youtube":
+            items = profile_data.get("items", [])
+            if items:
+                channel = items[0]
+                snippet = channel.get("snippet", {})
+                return (
+                    channel.get("id", ""),
+                    snippet.get("customUrl", snippet.get("title", "")).replace(" ", "").lower(),
+                    snippet.get("title", "")
+                )
+        elif platform == "tiktok":
+            data = profile_data.get("data", {})
+            user = data.get("user", {})
+            return (
+                user.get("open_id", ""),
+                user.get("username", ""),
+                user.get("display_name", "")
+            )
+    except Exception as e:
+        logger.warning(f"Error extracting profile info for {platform}: {str(e)}")
+    
+    # Fallback for any platform or error
+    return "", "", ""
 
 
 @router.get("/accounts", response_model=List[SocialAccountResponse])
@@ -96,8 +154,12 @@ def initiate_oauth_connection(
             detail=f"Already connected to {platform}"
         )
     
-    # Generate OAuth URL
+    # Generate dynamic OAuth URL based on request
     base_url = str(request.base_url).rstrip('/')
+    # Support both HTTP (dev) and HTTPS (prod)
+    if request.headers.get('x-forwarded-proto') == 'https':
+        base_url = base_url.replace('http://', 'https://')
+    
     redirect_uri = f"{base_url}{settings.API_V1_STR}/social/callback/{platform}"
     
     auth_url, state, code_verifier = oauth_service.get_authorization_url(
@@ -106,9 +168,14 @@ def initiate_oauth_connection(
         user_id=str(current_user.id)
     )
     
-    # Store state and code_verifier in session/cache for verification
-    # For now, we'll use a simple in-memory store (in production, use Redis)
-    # oauth_cache[state] = {"user_id": current_user.id, "code_verifier": code_verifier}
+    # Securely store state and code_verifier for CSRF protection
+    oauth_state_store.store_state(
+        state=state,
+        user_id=str(current_user.id),
+        platform=platform,
+        code_verifier=code_verifier,
+        redirect_uri=redirect_uri
+    )
     
     return ConnectResponse(
         auth_url=auth_url,
@@ -138,13 +205,25 @@ async def oauth_callback(
             detail=f"Unsupported platform: {platform}"
         )
     
-    # Extract user_id from state (format: "state_token:user_id")
-    try:
-        state_token, user_id = state.split(':', 1)
-    except ValueError:
+    # Validate and retrieve state data for CSRF protection
+    state_data = oauth_state_store.get_and_remove_state(state)
+    
+    if not state_data:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid state parameter"
+            detail="Invalid or expired OAuth state parameter"
+        )
+    
+    user_id = state_data["user_id"]
+    code_verifier = state_data["code_verifier"]
+    stored_redirect_uri = state_data["redirect_uri"]
+    stored_platform = state_data["platform"]
+    
+    # Validate platform matches
+    if stored_platform != platform:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Platform mismatch in OAuth callback"
         )
     
     # Verify user exists
@@ -155,24 +234,56 @@ async def oauth_callback(
             detail="User not found"
         )
     
-    # For production, retrieve code_verifier from cache using state
-    # code_verifier = oauth_cache.get(state, {}).get("code_verifier")
-    code_verifier = None  # Simplified for now
-    
     try:
-        # Exchange code for tokens
-        redirect_uri = f"http://localhost:8000{settings.API_V1_STR}/social/callback/{platform}"  # This should be dynamic
+        # Exchange code for tokens using stored redirect URI
         token_data = await oauth_service.exchange_code_for_tokens(
             platform=platform,
             code=code,
-            redirect_uri=redirect_uri,
+            redirect_uri=stored_redirect_uri,
             code_verifier=code_verifier
         )
         
         # Get user profile from the platform
         access_token = token_data.get('access_token')
-        # This is simplified - in real implementation, we'd use the social_service
-        # to get proper user profile data
+        
+        # Create temporary account to get profile data
+        temp_account = SocialAccount(
+            user_id=user.id,
+            platform=platform,
+            platform_user_id="temp",
+            username="temp",
+            access_token=oauth_service.encrypt_token(access_token, user_id),
+            refresh_token=None,
+            token_expires_at=datetime.utcnow() + timedelta(hours=1),
+            is_active=False,
+            sync_enabled=False
+        )
+        
+        # Fetch user profile to get real username and user ID
+        try:
+            profile_data = await social_service.get_user_profile(temp_account)
+            
+            # Extract platform-specific user info
+            platform_user_id, username, display_name = extract_profile_info(platform, profile_data)
+            
+        except Exception as e:
+            # If profile fetch fails, use fallback values but log the error
+            logger.warning(f"Failed to fetch {platform} profile for user {user_id}: {str(e)}")
+            platform_user_id = f"{platform}_{user_id}"
+            username = f"{platform}_user_{user_id[:8]}"
+            display_name = f"{platform.title()} Account"
+        
+        # Check if account with this platform user ID already exists
+        existing_account = db.query(SocialAccount).filter(
+            SocialAccount.platform == platform,
+            SocialAccount.platform_user_id == platform_user_id
+        ).first()
+        
+        if existing_account and existing_account.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This {platform} account is already connected to another user"
+            )
         
         # Encrypt tokens before storing
         encrypted_access_token = oauth_service.encrypt_token(access_token, user_id)
@@ -186,18 +297,31 @@ async def oauth_callback(
         expires_in = token_data.get('expires_in', 3600)  # Default 1 hour
         token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
         
-        # Create or update social account
-        social_account = SocialAccount(
-            user_id=user.id,
-            platform=platform,
-            platform_user_id="temp_id",  # Will be updated after profile fetch
-            username=f"{platform}_user",  # Will be updated after profile fetch
-            access_token=encrypted_access_token,
-            refresh_token=encrypted_refresh_token,
-            token_expires_at=token_expires_at,
-            is_active=True,
-            sync_enabled=True
-        )
+        # Create or update social account with real profile data
+        if existing_account and existing_account.user_id == user.id:
+            # Update existing account
+            existing_account.username = username
+            existing_account.display_name = display_name
+            existing_account.access_token = encrypted_access_token
+            existing_account.refresh_token = encrypted_refresh_token
+            existing_account.token_expires_at = token_expires_at
+            existing_account.is_active = True
+            existing_account.sync_enabled = True
+            social_account = existing_account
+        else:
+            # Create new account
+            social_account = SocialAccount(
+                user_id=user.id,
+                platform=platform,
+                platform_user_id=platform_user_id,
+                username=username,
+                display_name=display_name,
+                access_token=encrypted_access_token,
+                refresh_token=encrypted_refresh_token,
+                token_expires_at=token_expires_at,
+                is_active=True,
+                sync_enabled=True
+            )
         
         db.add(social_account)
         db.commit()

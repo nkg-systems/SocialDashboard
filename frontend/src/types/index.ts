@@ -52,6 +52,40 @@ export interface ConnectResponse {
   platform: string;
 }
 
+export interface SocialAccountMetrics {
+  platform: string;
+  username: string;
+  metrics: {
+    followers: number;
+    following: number;
+    posts: number;
+    likes: number;
+    views?: number;
+  };
+  last_sync?: string;
+}
+
+export interface ConnectedAccount {
+  id: string;
+  platformId: string;
+  username: string;
+  displayName: string;
+  followers: number;
+  profileImageUrl?: string;
+  lastSync: string;
+  status: 'connected' | 'error' | 'syncing';
+  permissions: string[];
+}
+
+export interface SocialPlatform {
+  id: string;
+  name: string;
+  description: string;
+  brandColor: string;
+  icon: React.ReactNode;
+  features: string[];
+}
+
 // Post types
 export interface Post {
   id: string;
