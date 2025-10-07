@@ -12,6 +12,7 @@ import logging
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.api.v1.api import api_router
+from app.middleware import rate_limit_middleware, security_headers_middleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -55,6 +56,13 @@ app.add_middleware(
     TrustedHostMiddleware, 
     allowed_hosts=["localhost", "127.0.0.1", "*.localhost"] if settings.DEBUG else []
 )
+
+# Security Headers Middleware
+app.middleware("http")(security_headers_middleware)
+
+# Rate Limiting Middleware (only in production)
+if not settings.DEBUG:
+    app.middleware("http")(rate_limit_middleware)
 
 
 # Middleware for request timing
