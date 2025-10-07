@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-sm3d}
       POSTGRES_USER: ${POSTGRES_USER:-sm3d_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-REDACTED_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
     ports:
       - "5432:5432"
     volumes:
