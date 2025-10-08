@@ -120,12 +120,38 @@ class SocialMediaService {
       throw new Error(`Invalid platform: ${platform}`);
     }
 
+    // Security: Generate additional client-side state for CSRF protection
+    const clientState = crypto.getRandomValues(new Uint8Array(16))
+      .reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '');
+
     try {
       const response = await this.initiateConnection(platform);
+      
+      // Validate response has required fields
+      if (!response.auth_url || !response.state) {
+        throw new Error('Invalid OAuth response from server');
+      }
+
+      // Validate auth URL is from trusted domain
+      const authUrl = new URL(response.auth_url);
+      const trustedDomains = {
+        facebook: ['facebook.com', 'www.facebook.com'],
+        instagram: ['instagram.com', 'www.instagram.com', 'facebook.com'],
+        linkedin: ['linkedin.com', 'www.linkedin.com'],
+        tiktok: ['tiktok.com', 'www.tiktok.com'],
+        youtube: ['accounts.google.com', 'www.googleapis.com']
+      };
+      
+      const platformDomains = trustedDomains[platform as keyof typeof trustedDomains];
+      if (!platformDomains?.includes(authUrl.hostname)) {
+        throw new Error('OAuth URL from untrusted domain');
+      }
       
       // Store state and platform for later verification
       sessionStorage.setItem('oauth_state', response.state);
       sessionStorage.setItem('oauth_platform', response.platform);
+      sessionStorage.setItem('oauth_client_state', clientState);
+      sessionStorage.setItem('oauth_timestamp', Date.now().toString());
       
       // Redirect to OAuth authorization URL
       window.location.href = response.auth_url;
@@ -136,7 +162,7 @@ class SocialMediaService {
       }
       throw new Error(sanitizedError);
     }
-  }
+  };
 
   /**
    * Disconnect a social media account
@@ -236,11 +262,13 @@ class SocialMediaService {
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('oauth_state');
       sessionStorage.removeItem('oauth_platform');
+      sessionStorage.removeItem('oauth_client_state');
+      sessionStorage.removeItem('oauth_timestamp');
     }
   }
 
   /**
-   * Check if user is returning from OAuth flow
+   * Check if user is returning from OAuth flow with proper validation
    */
   isReturningFromOAuth(): boolean {
     if (typeof window === 'undefined') return false;
@@ -248,10 +276,33 @@ class SocialMediaService {
     const urlParams = new URLSearchParams(window.location.search);
     const hasCode = urlParams.has('code');
     const hasState = urlParams.has('state');
+    const urlState = urlParams.get('state');
     const storedState = sessionStorage.getItem('oauth_state');
+    const storedTimestamp = sessionStorage.getItem('oauth_timestamp');
     
-    return hasCode && hasState && storedState !== null;
-  }
+    // Basic checks
+    if (!hasCode || !hasState || !storedState || !storedTimestamp) {
+      return false;
+    }
+    
+    // Security: Validate state parameter matches (CSRF protection)
+    if (urlState !== storedState) {
+      console.error('OAuth state mismatch - possible CSRF attack');
+      this.clearOAuthSession();
+      return false;
+    }
+    
+    // Security: Check if OAuth flow is too old (15 minutes max)
+    const timestamp = parseInt(storedTimestamp, 10);
+    const maxAge = 15 * 60 * 1000; // 15 minutes
+    if (Date.now() - timestamp > maxAge) {
+      console.error('OAuth flow expired');
+      this.clearOAuthSession();
+      return false;
+    }
+    
+    return true;
+  };
 
   /**
    * Handle successful OAuth connection

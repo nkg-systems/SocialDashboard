@@ -142,6 +142,13 @@ export const SocialAccountsPage: React.FC = () => {
 
   // Handler functions using the hook
   const handleConnect = async (platformId: string) => {
+    // Security: Validate platform ID
+    const validPlatforms = platforms.map(p => p.id);
+    if (!validPlatforms.includes(platformId)) {
+      console.error('Invalid platform ID attempted:', platformId);
+      return;
+    }
+
     try {
       await connectAccount(platformId);
     } catch (error) {
@@ -150,9 +157,27 @@ export const SocialAccountsPage: React.FC = () => {
   };
 
   const handleDisconnect = async (accountId: string) => {
-    if (!confirm('Are you sure you want to disconnect this account? You will lose access to posting and analytics for this platform.')) {
+    // Security: Validate account ID
+    const connectedIds = connectedAccounts.map(acc => acc.id);
+    if (!connectedIds.includes(accountId)) {
+      console.error('Attempted to disconnect non-existent or invalid account:', accountId);
       return;
     }
+
+    // Find the account to get platform name for confirmation
+    const account = connectedAccounts.find(acc => acc.id === accountId);
+    const platform = platforms.find(p => p.id === account?.platformId);
+    
+    const confirmed = confirm(
+      `Are you sure you want to disconnect from ${platform?.name || 'this platform'}?\n\n` +
+      'This will:\n' +
+      '• Stop all automated posting and data syncing\n' +
+      '• Remove access to this platform\'s analytics\n' +
+      '• Cancel any scheduled posts for this platform\n\n' +
+      'You can reconnect at any time.'
+    );
+    
+    if (!confirmed) return;
 
     try {
       await disconnectAccount(accountId);
@@ -340,25 +365,37 @@ export const SocialAccountsPage: React.FC = () => {
                     <svg className="w-4 h-4 text-success mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>OAuth2 secure authentication</span>
+                    <span>OAuth2 secure authentication with CSRF protection</span>
                   </li>
                   <li className="flex items-start space-x-2">
                     <svg className="w-4 h-4 text-success mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>We never store your passwords</span>
+                    <span>We never store your passwords or personal credentials</span>
                   </li>
                   <li className="flex items-start space-x-2">
                     <svg className="w-4 h-4 text-success mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>Encrypted token storage</span>
+                    <span>End-to-end encrypted token storage with expiration</span>
                   </li>
                   <li className="flex items-start space-x-2">
                     <svg className="w-4 h-4 text-success mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>You can revoke access anytime</span>
+                    <span>Verified redirect URLs to prevent phishing attacks</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <svg className="w-4 h-4 text-success mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>Limited time OAuth sessions (15 min max)</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <svg className="w-4 h-4 text-success mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>Full control - revoke access anytime from your accounts</span>
                   </li>
                 </ul>
               </div>

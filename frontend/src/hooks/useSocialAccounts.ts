@@ -75,6 +75,18 @@ export function useSocialAccounts(): UseSocialAccountsReturn {
 
   // Connect to a platform
   const connectAccount = useCallback(async (platformId: string) => {
+    // Rate limiting: prevent rapid connection attempts
+    const lastAttemptKey = `last_connect_attempt_${platformId}`;
+    const lastAttempt = sessionStorage.getItem(lastAttemptKey);
+    const now = Date.now();
+    
+    if (lastAttempt && now - parseInt(lastAttempt, 10) < 5000) { // 5 second cooldown
+      setError('Please wait a moment before trying to connect again');
+      return;
+    }
+    
+    sessionStorage.setItem(lastAttemptKey, now.toString());
+    
     try {
       setError(null);
       setConnecting(platformId);
@@ -83,6 +95,8 @@ export function useSocialAccounts(): UseSocialAccountsReturn {
       await socialService.connectPlatform(platformId);
       
     } catch (err) {
+      // Clear the rate limit on error so user can retry immediately
+      sessionStorage.removeItem(lastAttemptKey);
       setError(err instanceof Error ? err.message : `Failed to connect to ${platformId}`);
       console.error('Error connecting account:', err);
     } finally {
@@ -194,16 +208,48 @@ export function useSocialAccounts(): UseSocialAccountsReturn {
         const callbackInfo = socialService.getOAuthCallbackInfo();
         
         if (callbackInfo.error) {
+          // Handle different OAuth error types with specific messages
+          let errorMessage = 'Authentication failed';
+          switch (callbackInfo.error) {
+            case 'access_denied':
+              errorMessage = 'Connection cancelled by user';
+              break;
+            case 'invalid_request':
+              errorMessage = 'Invalid authentication request - please try again';
+              break;
+            case 'unauthorized_client':
+              errorMessage = 'Application not authorized for this platform';
+              break;
+            case 'unsupported_response_type':
+            case 'invalid_scope':
+              errorMessage = 'Platform configuration error - please contact support';
+              break;
+            default:
+              errorMessage = `Authentication error: ${callbackInfo.error}`;
+          }
+          
           socialService.handleOAuthError(callbackInfo.error);
-          setError(`OAuth error: ${callbackInfo.error}`);
+          setError(errorMessage);
         } else if (callbackInfo.code && callbackInfo.platform) {
           // OAuth was successful, the backend will handle the callback
           socialService.handleOAuthSuccess(callbackInfo.platform);
           
+          // Set temporary success state
+          setError(null);
+          
           // Wait a moment then refresh accounts
-          timeoutId = setTimeout(() => {
-            refreshAccounts();
+          timeoutId = setTimeout(async () => {
+            try {
+              await refreshAccounts();
+              // TODO: Could add a success notification here if needed
+            } catch (err) {
+              setError('Connected successfully but failed to refresh account data. Please refresh the page.');
+            }
           }, 1000);
+        } else {
+          // Incomplete callback - security issue
+          socialService.handleOAuthError('incomplete_callback');
+          setError('Authentication process incomplete - please try connecting again');
         }
       } else {
         // Normal load - just fetch accounts
