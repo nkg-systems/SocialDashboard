@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = secrets.token_urlsafe(32)
     
     # Database
-    DATABASE_URL: str = "sqlite:///./sm3d_dev.db"
+    DATABASE_URL: str = "postgresql://sm3d_user:sm3d_password@localhost:5432/sm3d"
     TEST_DATABASE_URL: Optional[str] = None
     
     # Redis

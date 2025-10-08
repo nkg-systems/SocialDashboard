@@ -5,16 +5,16 @@ services:
     image: postgres:15
     container_name: sm3d_postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-sm3d_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-sm3d}
       POSTGRES_USER: ${POSTGRES_USER:-sm3d_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sm3d_password}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-sm3d_user} -d $${POSTGRES_DB:-sm3d_dev}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-sm3d_user} -d $${POSTGRES_DB:-sm3d}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -44,7 +44,7 @@ services:
       - ../backend:/app
       - /app/__pycache__
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-sm3d_user}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/${POSTGRES_DB:-sm3d_dev}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-sm3d_user}:${POSTGRES_PASSWORD:-sm3d_password}@postgres:5432/${POSTGRES_DB:-sm3d}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/3
       - CELERY_RESULT_BACKEND=redis://redis:6379/4
@@ -65,7 +65,7 @@ services:
     volumes:
       - ../backend:/app
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-sm3d_user}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/${POSTGRES_DB:-sm3d_dev}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-sm3d_user}:${POSTGRES_PASSWORD:-sm3d_password}@postgres:5432/${POSTGRES_DB:-sm3d}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/3
       - CELERY_RESULT_BACKEND=redis://redis:6379/4
