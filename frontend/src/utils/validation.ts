@@ -158,3 +158,108 @@ export function isSafeRedirectUrl(url: string): boolean {
     return false;
   }
 }
+
+/**
+ * Sanitize input to prevent XSS and script injection
+ */
+export function sanitizeInput(input: string): string {
+  if (!input) return '';
+  
+  return input
+    .replace(/[<>"'&]/g, (match) => {
+      const entities: Record<string, string> = {
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#x27;',
+        '&': '&amp;'
+      };
+      return entities[match];
+    })
+    .replace(/javascript:/gi, '') // Remove javascript: URLs
+    .replace(/on\w+\s*=/gi, '') // Remove event handlers
+    .trim();
+}
+
+/**
+ * Validate post content for security and platform requirements
+ */
+export function validatePostContent(content: string): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  if (!content || content.trim().length === 0) {
+    errors.push('Post content cannot be empty');
+    return { isValid: false, errors };
+  }
+  
+  // Check for suspicious patterns
+  const suspiciousPatterns = [
+    /<script[^>]*>/gi,
+    /javascript:/gi,
+    /on\w+\s*=/gi,
+    /<iframe[^>]*>/gi,
+    /<embed[^>]*>/gi,
+    /<object[^>]*>/gi
+  ];
+  
+  for (const pattern of suspiciousPatterns) {
+    if (pattern.test(content)) {
+      errors.push('Content contains potentially unsafe elements');
+      break;
+    }
+  }
+  
+  // Check content length (different limits for different platforms)
+  if (content.length > 2800) {
+    errors.push('Content too long for cross-platform posting');
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * Validate image URL for security and format
+ */
+export function validateImageUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  
+  try {
+    const parsed = new URL(url);
+    
+    // Only allow HTTPS (and HTTP for development)
+    const allowedProtocols = ['https:'];
+    if (process.env.NODE_ENV === 'development') {
+      allowedProtocols.push('http:');
+    }
+    
+    if (!allowedProtocols.includes(parsed.protocol)) {
+      return false;
+    }
+    
+    // Check for valid image file extensions
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
+    const hasValidExtension = imageExtensions.some(ext => 
+      parsed.pathname.toLowerCase().includes(ext)
+    );
+    
+    // Also accept URLs without extensions if they're from known image hosts
+    const knownImageHosts = [
+      'images.unsplash.com',
+      'cdn.pixabay.com',
+      'i.imgur.com',
+      'media.giphy.com',
+      'picsum.photos'
+    ];
+    
+    const isKnownImageHost = knownImageHosts.some(host => 
+      parsed.hostname === host || parsed.hostname.endsWith(`.${host}`)
+    );
+    
+    return hasValidExtension || isKnownImageHost;
+  } catch {
+    return false;
+  }
+}
