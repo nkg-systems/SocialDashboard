@@ -263,3 +263,147 @@ export function validateImageUrl(url: string): boolean {
     return false;
   }
 }
+
+/**
+ * Validate name fields (first name, last name)
+ */
+export function validateName(name: string): boolean {
+  if (!name || typeof name !== 'string') return false;
+  
+  const trimmed = name.trim();
+  
+  // Must be 1-50 characters
+  if (trimmed.length < 1 || trimmed.length > 50) return false;
+  
+  // Only allow letters, spaces, hyphens, apostrophes, and accented characters
+  const namePattern = /^[\p{L}\s\-']+$/u;
+  return namePattern.test(trimmed);
+}
+
+/**
+ * Validate email address
+ */
+export function validateEmail(email: string): boolean {
+  if (!email || typeof email !== 'string') return false;
+  
+  // Basic email validation pattern
+  const emailPattern = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+  
+  if (!emailPattern.test(email)) return false;
+  
+  // Additional length checks
+  if (email.length > 254) return false;
+  
+  // Check for reasonable domain length
+  const [, domain] = email.split('@');
+  if (!domain || domain.length > 253) return false;
+  
+  return true;
+}
+
+/**
+ * Validate bio/description text
+ */
+export function validateBio(bio: string): boolean {
+  if (!bio) return true; // Bio is optional
+  if (typeof bio !== 'string') return false;
+  
+  const trimmed = bio.trim();
+  
+  // Must be less than 500 characters
+  if (trimmed.length > 500) return false;
+  
+  // Check for potentially malicious content
+  const maliciousPatterns = [
+    /<script[^>]*>/gi,
+    /javascript:/gi,
+    /on\w+\s*=/gi,
+    /<iframe[^>]*>/gi,
+    /<embed[^>]*>/gi,
+    /<object[^>]*>/gi
+  ];
+  
+  for (const pattern of maliciousPatterns) {
+    if (pattern.test(bio)) return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Validate password strength
+ */
+export function validatePassword(password: string): boolean {
+  if (!password || typeof password !== 'string') return false;
+  
+  // Must be at least 8 characters
+  if (password.length < 8) return false;
+  
+  // Must contain at least one lowercase letter
+  if (!/[a-z]/.test(password)) return false;
+  
+  // Must contain at least one uppercase letter
+  if (!/[A-Z]/.test(password)) return false;
+  
+  // Must contain at least one number
+  if (!/\d/.test(password)) return false;
+  
+  // Must contain at least one special character
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(password)) return false;
+  
+  return true;
+}
+
+/**
+ * Validate image file for upload
+ */
+export function validateImageFile(file: File): boolean {
+  if (!file || !(file instanceof File)) return false;
+  
+  // Check file type
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) return false;
+  
+  // Check file size (5MB max)
+  const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+  if (file.size > maxSize) return false;
+  
+  // Check filename for suspicious patterns
+  const filename = file.name.toLowerCase();
+  const suspiciousPatterns = [
+    /\.php$/,
+    /\.js$/,
+    /\.html$/,
+    /\.exe$/,
+    /\.bat$/,
+    /\.sh$/
+  ];
+  
+  for (const pattern of suspiciousPatterns) {
+    if (pattern.test(filename)) return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Sanitize HTML content to prevent XSS
+ */
+export function sanitizeHtml(input: string): string {
+  if (!input || typeof input !== 'string') return '';
+  
+  return input
+    .replace(/[<>"'&]/g, (match) => {
+      const entities: Record<string, string> = {
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#x27;',
+        '&': '&amp;'
+      };
+      return entities[match] || match;
+    })
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
+    .trim();
+}

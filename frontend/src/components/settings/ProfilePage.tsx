@@ -150,10 +150,25 @@ export const ProfilePage: React.FC = () => {
     setAvatarFile(file);
     setIsChanged(true);
 
-    // Create preview
+    // Create preview with security validation
     const reader = new FileReader();
     reader.onload = (e) => {
-      setPreviewUrl(e.target?.result as string);
+      const result = e.target?.result as string;
+      // Security: Validate the data URL format
+      if (result && result.startsWith('data:image/')) {
+        setPreviewUrl(result);
+      } else {
+        setErrors(prev => ({
+          ...prev,
+          avatar: 'Invalid image file format'
+        }));
+      }
+    };
+    reader.onerror = () => {
+      setErrors(prev => ({
+        ...prev,
+        avatar: 'Failed to read image file'
+      }));
     };
     reader.readAsDataURL(file);
 
