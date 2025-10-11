@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { AuthProvider } from '../contexts/AuthContext'
 import './globals.css'
 
 const inter = Inter({ 
@@ -33,9 +34,11 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body className={`${inter.className} antialiased`}>
-        <div id="__next" className="min-h-screen bg-background text-text-primary">
-          {children}
-        </div>
+        <AuthProvider>
+          <div id="__next" className="min-h-screen bg-background text-text-primary">
+            {children}
+          </div>
+        </AuthProvider>
       </body>
     </html>
   )

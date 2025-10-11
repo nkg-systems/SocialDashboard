@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '../contexts/AuthContext';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -18,6 +19,7 @@ interface NavItem {
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+  const { user, isAuthenticated, signOut } = useAuth();
 
   const navItems: NavItem[] = [
     {
@@ -153,15 +155,57 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
           {/* User section */}
           <div className="px-4 py-4 border-t border-border">
-            <div className="flex items-center">
-              <div className="w-8 h-8 bg-accent/20 rounded-full flex items-center justify-center">
-                <span className="text-accent font-semibold text-sm">U</span>
+            {isAuthenticated && user ? (
+              <div className="space-y-2">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 bg-accent/20 rounded-full flex items-center justify-center">
+                    <span className="text-accent font-semibold text-sm">
+                      {user.name ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="ml-3 flex-1">
+                    <p className="text-sm font-medium text-text-primary truncate">
+                      {user.name || 'User'}
+                    </p>
+                    <p className="text-xs text-text-muted truncate">{user.email}</p>
+                  </div>
+                </div>
+                
+                {/* Role badge */}
+                <div className="flex items-center justify-between">
+                  <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
+                    user.role === 'admin' 
+                      ? 'bg-purple-100 text-purple-800' 
+                      : user.role === 'user'
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {user.role}
+                  </span>
+                  
+                  {/* Sign out button */}
+                  <button
+                    onClick={() => signOut()}
+                    className="text-xs text-text-muted hover:text-red-600 transition-colors duration-200"
+                    title="Sign out"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                  </button>
+                </div>
               </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium text-text-primary">User</p>
-                <p className="text-xs text-text-muted">user@example.com</p>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-text-muted">Not signed in</span>
+                <Link 
+                  href="/auth/signin"
+                  className="text-xs text-accent hover:text-accent-hover transition-colors duration-200"
+                >
+                  Sign in
+                </Link>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

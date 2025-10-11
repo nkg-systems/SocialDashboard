@@ -3,37 +3,62 @@
  * Centralized security functions for user validation and secure operations
  */
 
-// SECURITY: Mock user context - In production, this should come from authentication provider
+import { useAuth } from '../contexts/AuthContext';
+
+// Type definitions for user data
 interface User {
   id: string;
   email: string;
-  role: 'admin' | 'user' | 'viewer';
+  name?: string;
+  image?: string;
+  role: string;
   permissions: string[];
 }
 
-// SECURITY: This should be replaced with actual authentication context
-let currentUser: User | null = {
-  id: 'user_' + Date.now(), // Generate unique user ID
-  email: 'demo@example.com',
-  role: 'user',
-  permissions: ['read', 'write', 'delete_own']
+// Hook-based functions for use in React components
+/**
+ * Custom hook to get security utilities with NextAuth integration
+ * SECURITY: Use this hook in React components for authenticated operations
+ */
+export const useSecurityUtils = () => {
+  const { user, isAuthenticated, hasPermission: authHasPermission } = useAuth();
+  
+  const getCurrentUser = (): User | null => {
+    return user;
+  };
+  
+  const getCurrentUserId = (): string => {
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    return user.id;
+  };
+  
+  const verifyResourceOwnership = (resourceUserId: string): boolean => {
+    if (!user) return false;
+    return user.id === resourceUserId;
+  };
+  
+  const hasPermission = (permission: string): boolean => {
+    return authHasPermission(permission);
+  };
+  
+  return {
+    getCurrentUser,
+    getCurrentUserId,
+    verifyResourceOwnership,
+    hasPermission,
+    isAuthenticated,
+    user
+  };
 };
 
+// Parameter-based functions for use in non-component contexts
 /**
- * Get current authenticated user
- * SECURITY: In production, this should integrate with your auth provider (Auth0, Firebase, etc.)
+ * Get current user ID safely (parameter version)
+ * SECURITY: Use when you already have user object from session
  */
-export const getCurrentUser = (): User | null => {
-  // TODO: Replace with actual authentication check
-  return currentUser;
-};
-
-/**
- * Get current user ID safely
- * SECURITY: Always use this instead of hardcoded user IDs
- */
-export const getCurrentUserId = (): string => {
-  const user = getCurrentUser();
+export const getCurrentUserIdFromUser = (user: User | null): string => {
   if (!user) {
     throw new Error('User not authenticated');
   }
@@ -41,22 +66,54 @@ export const getCurrentUserId = (): string => {
 };
 
 /**
- * Check if current user owns a resource
+ * Check if user owns a resource (parameter version)
  * SECURITY: Essential for preventing unauthorized access
  */
-export const verifyResourceOwnership = (resourceUserId: string): boolean => {
-  const currentUserId = getCurrentUserId();
-  return currentUserId === resourceUserId;
+export const verifyResourceOwnershipForUser = (user: User | null, resourceUserId: string): boolean => {
+  if (!user) return false;
+  return user.id === resourceUserId;
 };
 
 /**
- * Check if user has specific permission
+ * Check if user has specific permission (parameter version)
  * SECURITY: Permission-based access control
  */
-export const hasPermission = (permission: string): boolean => {
-  const user = getCurrentUser();
+export const hasPermissionForUser = (user: User | null, permission: string): boolean => {
   if (!user) return false;
   return user.permissions.includes(permission) || user.role === 'admin';
+};
+
+// Legacy functions (deprecated) - kept for backward compatibility
+/**
+ * @deprecated Use useSecurityUtils().getCurrentUser() in components or pass user parameter
+ */
+export const getCurrentUser = (): User | null => {
+  console.warn('getCurrentUser() is deprecated. Use useSecurityUtils() hook in components or pass user parameter to utility functions.');
+  return null;
+};
+
+/**
+ * @deprecated Use useSecurityUtils().getCurrentUserId() in components or getCurrentUserIdFromUser(user)
+ */
+export const getCurrentUserId = (): string => {
+  console.warn('getCurrentUserId() is deprecated. Use useSecurityUtils() hook in components or getCurrentUserIdFromUser(user).');
+  throw new Error('User not authenticated - use NextAuth session');
+};
+
+/**
+ * @deprecated Use useSecurityUtils().verifyResourceOwnership() in components or verifyResourceOwnershipForUser(user, resourceUserId)
+ */
+export const verifyResourceOwnership = (resourceUserId: string): boolean => {
+  console.warn('verifyResourceOwnership() is deprecated. Use useSecurityUtils() hook in components or verifyResourceOwnershipForUser(user, resourceUserId).');
+  return false;
+};
+
+/**
+ * @deprecated Use useSecurityUtils().hasPermission() in components or hasPermissionForUser(user, permission)
+ */
+export const hasPermission = (permission: string): boolean => {
+  console.warn('hasPermission() is deprecated. Use useSecurityUtils() hook in components or hasPermissionForUser(user, permission).');
+  return false;
 };
 
 /**
@@ -144,11 +201,20 @@ export const sanitizeFilename = (filename: string): string => {
  * Generate secure asset ID
  * SECURITY: Use cryptographically secure random IDs
  */
-export const generateAssetId = (prefix: string = 'asset'): string => {
+export const generateAssetId = (user: User | null, prefix: string = 'asset'): string => {
   const timestamp = Date.now();
   const randomPart = Math.random().toString(36).substring(2, 15);
-  const userPart = getCurrentUserId().slice(-8); // Last 8 chars of user ID
+  const userPart = user?.id ? user.id.slice(-8) : 'anon'; // Last 8 chars of user ID or 'anon'
   return `${prefix}_${timestamp}_${randomPart}_${userPart}`;
+};
+
+/**
+ * Generate secure asset ID using hook (for React components)
+ * SECURITY: Use in React components with authentication context
+ */
+export const useGenerateAssetId = () => {
+  const { user } = useAuth();
+  return (prefix: string = 'asset') => generateAssetId(user, prefix);
 };
 
 /**
@@ -215,7 +281,11 @@ class RateLimiter {
     this.timeWindowMs = timeWindowMs;
   }
   
-  isAllowed(userId: string, operation: string): boolean {
+  isAllowed(userId: string | null, operation: string): boolean {
+    if (!userId) {
+      // For anonymous users, use a generic key
+      userId = 'anonymous';
+    }
     const key = `${userId}:${operation}`;
     const now = Date.now();
     
@@ -252,32 +322,61 @@ export const rateLimiter = new RateLimiter();
  * SECURITY: Track security-relevant operations
  */
 export const auditLog = {
-  log: (action: string, resource: string, success: boolean, details?: any) => {
+  log: (user: User | null, action: string, resource: string, success: boolean, details?: any) => {
     const logEntry = {
       timestamp: new Date().toISOString(),
-      userId: getCurrentUserId(),
+      userId: user?.id || 'anonymous',
+      userRole: user?.role || 'anonymous',
       action,
       resource,
       success,
       details,
-      userAgent: typeof window !== 'undefined' ? window.navigator.userAgent : 'server',
-      ip: 'client' // In production, this should be captured server-side
+      // SECURITY: Don't log sensitive user agent or IP in development
+      // In production, these should be captured server-side with proper anonymization
     };
     
-    // In production, send to your logging service
-    console.log('AUDIT:', logEntry);
+    // SECURITY: In production, send to your secure logging service
+    // Don't log sensitive information to console in production
+    if (process.env.NODE_ENV === 'development') {
+      console.log('AUDIT:', logEntry);
+    }
   }
 };
 
+/**
+ * Hook-based audit logging for React components
+ * SECURITY: Use in React components with authentication context
+ */
+export const useAuditLog = () => {
+  const { user } = useAuth();
+  
+  return {
+    log: (action: string, resource: string, success: boolean, details?: any) => {
+      auditLog.log(user, action, resource, success, details);
+    }
+  };
+};
+
 export default {
+  // New NextAuth-integrated functions
+  useSecurityUtils,
+  getCurrentUserIdFromUser,
+  verifyResourceOwnershipForUser,
+  hasPermissionForUser,
+  generateAssetId,
+  useGenerateAssetId,
+  auditLog,
+  useAuditLog,
+  
+  // Legacy functions (deprecated)
   getCurrentUser,
   getCurrentUserId,
   verifyResourceOwnership,
   hasPermission,
+  
+  // Utility functions (no authentication required)
   validateFileUpload,
   sanitizeFilename,
-  generateAssetId,
   validateTemplateContent,
-  rateLimiter,
-  auditLog
+  rateLimiter
 };

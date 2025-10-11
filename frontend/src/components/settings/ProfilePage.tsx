@@ -5,12 +5,14 @@
 
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '../contexts/AuthContext';
+import { useSecurityUtils, useAuditLog } from '../utils/security';
 import { 
   validateName, 
   validateEmail, 
@@ -52,29 +54,56 @@ interface FormErrors {
 }
 
 export const ProfilePage: React.FC = () => {
-  // Mock user data - in real app this would come from API/context
-  const [profile, setProfile] = useState<UserProfile>({
-    id: '1',
-    firstName: 'John',
-    lastName: 'Doe',
-    email: 'john.doe@example.com',
-    username: 'johndoe',
-    bio: 'Social media enthusiast and content creator',
-    avatarUrl: '',
-    timezone: 'America/New_York',
-    language: 'en',
-    createdAt: '2024-01-01T00:00:00Z',
-    updatedAt: '2024-01-15T00:00:00Z',
+  const { user, isAuthenticated } = useAuth();
+  const { hasPermission } = useSecurityUtils();
+  const auditLogger = useAuditLog();
+  
+  // Initialize profile from NextAuth user data
+  const [profile, setProfile] = useState<UserProfile>(() => {
+    if (!user) {
+      return {
+        id: '',
+        firstName: '',
+        lastName: '',
+        email: '',
+        username: '',
+        bio: '',
+        avatarUrl: '',
+        timezone: 'America/New_York',
+        language: 'en',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    
+    // Split the name if available
+    const nameParts = user.name ? user.name.split(' ') : ['', ''];
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    
+    return {
+      id: user.id,
+      firstName,
+      lastName,
+      email: user.email,
+      username: user.email.split('@')[0], // Use email prefix as username
+      bio: '',
+      avatarUrl: user.image || '',
+      timezone: 'America/New_York',
+      language: 'en',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   });
 
-  const [formData, setFormData] = useState<ProfileFormData>({
+  const [formData, setFormData] = useState<ProfileFormData>(() => ({
     firstName: profile.firstName,
     lastName: profile.lastName,
     email: profile.email,
     bio: profile.bio,
     timezone: profile.timezone,
     language: profile.language,
-  });
+  }));
 
   const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -83,6 +112,43 @@ export const ProfilePage: React.FC = () => {
   const [previewUrl, setPreviewUrl] = useState<string>(profile.avatarUrl || '');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Update form data when user changes (e.g., after sign in)
+  useEffect(() => {
+    if (user) {
+      const nameParts = user.name ? user.name.split(' ') : ['', ''];
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      
+      const updatedProfile = {
+        id: user.id,
+        firstName,
+        lastName,
+        email: user.email,
+        username: user.email.split('@')[0],
+        bio: profile.bio, // Keep existing bio
+        avatarUrl: user.image || '',
+        timezone: profile.timezone,
+        language: profile.language,
+        createdAt: profile.createdAt,
+        updatedAt: new Date().toISOString(),
+      };
+      
+      setProfile(updatedProfile);
+      setFormData({
+        firstName,
+        lastName,
+        email: user.email,
+        bio: profile.bio,
+        timezone: profile.timezone,
+        language: profile.language,
+      });
+      
+      if (user.image) {
+        setPreviewUrl(user.image);
+      }
+    }
+  }, [user]);
 
   // Handle form field changes
   const handleInputChange = useCallback((field: keyof ProfileFormData, value: string) => {
@@ -183,7 +249,21 @@ export const ProfilePage: React.FC = () => {
   const handleSubmit = useCallback(async (event: React.FormEvent) => {
     event.preventDefault();
 
+    // Security: Check authentication
+    if (!isAuthenticated || !user) {
+      setErrors({ submit: 'You must be logged in to update your profile.' });
+      return;
+    }
+
+    // Security: Check write permissions
+    if (!hasPermission('write')) {
+      setErrors({ submit: 'You do not have permission to update your profile.' });
+      auditLogger.log('PROFILE_UPDATE_DENIED', 'profile', false, { reason: 'insufficient_permissions' });
+      return;
+    }
+
     if (!validateForm()) {
+      auditLogger.log('PROFILE_UPDATE_FAILED', 'profile', false, { reason: 'validation_error', errors });
       return;
     }
 
@@ -191,6 +271,12 @@ export const ProfilePage: React.FC = () => {
     setErrors({});
 
     try {
+      // Log the profile update attempt
+      auditLogger.log('PROFILE_UPDATE_START', 'profile', true, { 
+        changes: formData,
+        hasAvatarChange: !!avatarFile 
+      });
+
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1500));
 
@@ -205,17 +291,27 @@ export const ProfilePage: React.FC = () => {
       setProfile(updatedProfile);
       setIsChanged(false);
 
-      // TODO: Show success notification
+      // Log successful update
+      auditLogger.log('PROFILE_UPDATE_SUCCESS', 'profile', true, { 
+        profileId: profile.id,
+        updatedFields: Object.keys(formData) 
+      });
+
       console.log('Profile updated successfully');
 
     } catch (error) {
-      setErrors({
-        submit: 'Failed to update profile. Please try again.'
+      const errorMessage = 'Failed to update profile. Please try again.';
+      setErrors({ submit: errorMessage });
+      
+      // Log the error
+      auditLogger.log('PROFILE_UPDATE_ERROR', 'profile', false, { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        profileId: profile.id 
       });
     } finally {
       setIsLoading(false);
     }
-  }, [formData, validateForm, profile, previewUrl]);
+  }, [formData, validateForm, profile, previewUrl, isAuthenticated, user, hasPermission, auditLogger, errors, avatarFile]);
 
   // Reset form
   const handleReset = useCallback(() => {
@@ -254,6 +350,31 @@ export const ProfilePage: React.FC = () => {
     { value: 'ja', label: '日本語' },
     { value: 'ko', label: '한국어' },
   ];
+
+  // Authentication guard
+  if (!isAuthenticated || !user) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-text-primary mb-2">Authentication Required</h2>
+            <p className="text-text-muted mb-4">You must be signed in to view and edit your profile.</p>
+            <Button 
+              onClick={() => window.location.href = '/auth/signin'}
+              className="px-6"
+            >
+              Sign In
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
