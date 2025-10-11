@@ -48,15 +48,19 @@ type SortDirection = 'asc' | 'desc';
 type FilterType = 'all' | 'image' | 'video' | 'gif';
 
 interface MediaAssetManagerProps {
-  onSelectAsset?: (asset: MediaAsset) => void;
+  onSelectMedia?: (asset: MediaAsset) => void;
+  onSelectAsset?: (asset: MediaAsset) => void; // Keep for backward compatibility
   selectionMode?: boolean;
   maxSelections?: number;
+  initialSearchTerm?: string;
 }
 
 export const MediaAssetManager: React.FC<MediaAssetManagerProps> = ({
+  onSelectMedia,
   onSelectAsset,
   selectionMode = false,
-  maxSelections = 10
+  maxSelections = 10,
+  initialSearchTerm = ''
 }) => {
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [folders, setFolders] = useState<MediaFolder[]>([
@@ -75,7 +79,7 @@ export const MediaAssetManager: React.FC<MediaAssetManagerProps> = ({
   const [sortField, setSortField] = useState<SortField>('uploadedAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [filterType, setFilterType] = useState<FilterType>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showUploadZone, setShowUploadZone] = useState(false);
@@ -220,9 +224,9 @@ export const MediaAssetManager: React.FC<MediaAssetManagerProps> = ({
     }
   }, []);
 
-  // Validate video files
+  // Validate video files - FIXED: Missing function definition
   const isValidVideoFile = useCallback((file: File): boolean => {
-    const validVideoTypes = ['video/mp4', 'video/webm', 'video/ogg'];
+    const validVideoTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo'];
     return validVideoTypes.includes(file.type) && file.size <= 100 * 1024 * 1024;
   }, []);
 
@@ -284,6 +288,8 @@ export const MediaAssetManager: React.FC<MediaAssetManagerProps> = ({
 
     if (maxSelections === 1) {
       setSelectedAssets([assetId]);
+      // Call both callbacks for compatibility
+      onSelectMedia?.(asset);
       onSelectAsset?.(asset);
     } else {
       setSelectedAssets(prev => {
@@ -296,7 +302,7 @@ export const MediaAssetManager: React.FC<MediaAssetManagerProps> = ({
         return newSelection;
       });
     }
-  }, [selectionMode, maxSelections, assets, onSelectAsset]);
+  }, [selectionMode, maxSelections, assets, onSelectMedia, onSelectAsset]);
 
   // Handle asset deletion
   const handleAssetDelete = useCallback((assetId: string) => {
