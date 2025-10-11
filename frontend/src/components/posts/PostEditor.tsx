@@ -6,6 +6,8 @@ import { Card } from '../ui/Card';
 import { PostCreate, PostUpdate, ConnectedAccount } from '@/types';
 import { validatePostContent, sanitizeInput, validateImageUrl } from '@/utils/validation';
 import { useSocialAccounts } from '@/hooks/useSocialAccounts';
+import { ContentLibraryPage } from '@/components/content-library/ContentLibraryPage';
+import { useDialog } from '@/components/ui/Dialog';
 
 interface PostEditorProps {
   initialData?: Partial<PostCreate>;
@@ -23,6 +25,39 @@ interface PostFormData {
   mentions: string[];
   scheduled_at: string;
   social_account_ids: string[];
+  selectedTemplate?: ContentTemplate;
+  templateVariables?: Record<string, string>;
+}
+
+interface MediaAsset {
+  id: string;
+  filename: string;
+  originalName: string;
+  type: 'image' | 'video' | 'gif';
+  url: string;
+  thumbnailUrl?: string;
+  tags: string[];
+  description: string;
+  alt: string;
+}
+
+interface ContentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  variables: TemplateVariable[];
+  platforms: string[];
+  tags: string[];
+  usageCount: number;
+}
+
+interface TemplateVariable {
+  name: string;
+  type: 'text' | 'number' | 'url' | 'hashtag' | 'mention';
+  placeholder: string;
+  required: boolean;
+  defaultValue?: string;
 }
 
 const MAX_CONTENT_LENGTH = 2800; // Conservative limit for cross-platform posting
@@ -39,6 +74,7 @@ export const PostEditor: React.FC<PostEditorProps> = ({
   mode
 }) => {
   const { connectedAccounts, loading: accountsLoading } = useSocialAccounts();
+  const { confirm, alert, Dialog } = useDialog();
   
   const [formData, setFormData] = useState<PostFormData>({
     content: initialData.content || '',
@@ -46,12 +82,16 @@ export const PostEditor: React.FC<PostEditorProps> = ({
     hashtags: initialData.hashtags || [],
     mentions: initialData.mentions || [],
     scheduled_at: initialData.scheduled_at || '',
-    social_account_ids: initialData.social_account_ids || []
+    social_account_ids: initialData.social_account_ids || [],
+    selectedTemplate: undefined,
+    templateVariables: {}
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [characterCount, setCharacterCount] = useState(0);
   const [isDraft, setIsDraft] = useState(true);
+  const [showContentLibrary, setShowContentLibrary] = useState(false);
+  const [contentLibraryTab, setContentLibraryTab] = useState<'media' | 'templates'>('media');
 
   // Security: Content validation
   const validateForm = useCallback((): boolean => {
@@ -168,6 +208,74 @@ export const PostEditor: React.FC<PostEditorProps> = ({
         : [...prev.social_account_ids, accountId]
     }));
   }, []);
+
+  // Handle media asset selection from Content Library
+  const handleMediaAssetSelect = useCallback((asset: MediaAsset) => {
+    if (formData.media_urls.length < MAX_MEDIA_URLS) {
+      setFormData(prev => ({
+        ...prev,
+        media_urls: [...prev.media_urls, asset.url]
+      }));
+      setShowContentLibrary(false);
+    } else {
+      alert('Media Limit Reached', `Maximum ${MAX_MEDIA_URLS} media files allowed`, 'warning');
+    }
+  }, [formData.media_urls.length, alert]);
+
+  // Handle template selection from Content Library
+  const handleTemplateSelect = useCallback((template: ContentTemplate) => {
+    // Initialize variables with default values
+    const templateVariables: Record<string, string> = {};
+    template.variables.forEach(variable => {
+      templateVariables[variable.name] = variable.defaultValue || '';
+    });
+
+    setFormData(prev => ({
+      ...prev,
+      selectedTemplate: template,
+      templateVariables,
+      content: template.content // Start with template content
+    }));
+    setShowContentLibrary(false);
+  }, []);
+
+  // Apply template with variable substitution
+  const applyTemplate = useCallback(() => {
+    if (!formData.selectedTemplate || !formData.templateVariables) return;
+
+    let content = formData.selectedTemplate.content;
+    
+    // Replace variables in content
+    Object.entries(formData.templateVariables).forEach(([name, value]) => {
+      const regex = new RegExp(`\\{\\{${name}\\}\\}`, 'g');
+      content = content.replace(regex, value);
+    });
+
+    setFormData(prev => ({ ...prev, content }));
+  }, [formData.selectedTemplate, formData.templateVariables]);
+
+  // Handle template variable change
+  const handleTemplateVariableChange = useCallback((variableName: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      templateVariables: {
+        ...prev.templateVariables,
+        [variableName]: value
+      }
+    }));
+  }, []);
+
+  // Clear selected template
+  const clearTemplate = useCallback(() => {
+    confirm('Clear Template', 'This will remove the selected template and variables. Continue?', () => {
+      setFormData(prev => ({
+        ...prev,
+        selectedTemplate: undefined,
+        templateVariables: {},
+        content: '' // Clear content when removing template
+      }));
+    });
+  }, [confirm]);
 
   // Handle save
   const handleSave = useCallback(async (publishNow: boolean = false) => {
@@ -297,9 +405,92 @@ export const PostEditor: React.FC<PostEditorProps> = ({
             </div>
           </Card>
 
+          {/* Template Selection */}
+          {formData.selectedTemplate ? (
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="sm3d-text-h2">Template: {formData.selectedTemplate.name}</h3>
+                <Button variant="secondary" size="sm" onClick={clearTemplate}>
+                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Clear Template
+                </Button>
+              </div>
+              
+              <div className="space-y-4">
+                <p className="text-sm text-text-muted">{formData.selectedTemplate.description}</p>
+                
+                {/* Template Variables */}
+                {formData.selectedTemplate.variables.length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="font-medium text-text-primary">Template Variables:</h4>
+                    {formData.selectedTemplate.variables.map((variable) => (
+                      <div key={variable.name}>
+                        <label className="block text-sm font-medium text-text-primary mb-1">
+                          {variable.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          {variable.required && <span className="text-error ml-1">*</span>}
+                        </label>
+                        <input
+                          type={variable.type === 'number' ? 'number' : 'text'}
+                          value={formData.templateVariables?.[variable.name] || ''}
+                          onChange={(e) => handleTemplateVariableChange(variable.name, e.target.value)}
+                          placeholder={variable.placeholder}
+                          className="sm3d-input w-full"
+                          disabled={isLoading}
+                        />
+                      </div>
+                    ))}
+                    <Button onClick={applyTemplate} className="mt-3">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Apply Template
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </Card>
+          ) : (
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="sm3d-text-h2">Content Templates</h3>
+                <Button 
+                  variant="secondary" 
+                  onClick={() => {
+                    setContentLibraryTab('templates');
+                    setShowContentLibrary(true);
+                  }}
+                  disabled={isLoading}
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Browse Templates
+                </Button>
+              </div>
+              <p className="text-sm text-text-muted">Choose a template to get started with pre-built content and variables.</p>
+            </Card>
+          )}
+
           {/* Media Attachment */}
           <Card>
-            <h3 className="sm3d-text-h2 mb-4">Media Attachments</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="sm3d-text-h2">Media Attachments</h3>
+              <Button 
+                variant="secondary"
+                onClick={() => {
+                  setContentLibraryTab('media');
+                  setShowContentLibrary(true);
+                }}
+                disabled={isLoading || formData.media_urls.length >= MAX_MEDIA_URLS}
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                Browse Media
+              </Button>
+            </div>
             <div className="space-y-4">
               <div className="flex space-x-2">
                 <input
@@ -443,6 +634,24 @@ export const PostEditor: React.FC<PostEditorProps> = ({
           </Card>
         </div>
       </div>
+
+      {/* Content Library Modal */}
+      {showContentLibrary && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+            <ContentLibraryPage
+              initialTab={contentLibraryTab}
+              selectionMode={true}
+              onSelectMedia={handleMediaAssetSelect}
+              onSelectTemplate={handleTemplateSelect}
+              onClose={() => setShowContentLibrary(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Dialog Component */}
+      <Dialog />
     </div>
   );
 };

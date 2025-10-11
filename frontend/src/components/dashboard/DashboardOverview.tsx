@@ -1,10 +1,12 @@
 'use client';
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { useDashboardMetrics, usePlatformMetrics, useRecentActivity } from '@/hooks/useDashboardData';
 import { useSocialAccounts } from '@/hooks/useSocialAccounts';
+import { ContentLibraryWidget } from '@/components/content-library/ContentLibraryWidget';
 
 interface MetricCardProps {
   title: string;
@@ -120,6 +122,8 @@ const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
 };
 
 export const DashboardOverview: React.FC = () => {
+  const router = useRouter();
+  
   // Fetch real data from API
   const { data: dashboardMetrics, loading: metricsLoading, error: metricsError } = useDashboardMetrics();
   const { data: platformMetrics, loading: platformLoading } = usePlatformMetrics();
@@ -404,160 +408,163 @@ export const DashboardOverview: React.FC = () => {
       </div>
 
       {/* Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Activity */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {activityLoading ? (
-                  Array.from({ length: 5 }, (_, i) => (
-                    <div key={i} className="flex items-center space-x-4 p-3 bg-background rounded-button animate-pulse">
-                      <div className="w-8 h-8 bg-border rounded-full"></div>
-                      <div className="flex-1">
-                        <div className="h-4 bg-border rounded w-3/4 mb-2"></div>
-                        <div className="h-3 bg-border rounded w-1/2"></div>
-                      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Content Library Widget */}
+        <ContentLibraryWidget 
+          onOpenLibrary={() => router.push('/content-library')}
+          showStats={true}
+          compact={false}
+        />
+        
+        {/* Social Accounts */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Connected Accounts</CardTitle>
+              <Button variant="ghost" size="sm">
+                Manage
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {accountsLoading ? (
+              Array.from({ length: 3 }, (_, i) => (
+                <Card key={i} className="animate-pulse">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-6 h-6 bg-border rounded"></div>
+                    <div className="flex-1">
+                      <div className="h-4 bg-border rounded w-24 mb-2"></div>
+                      <div className="h-3 bg-border rounded w-20 mb-1"></div>
+                      <div className="h-3 bg-border rounded w-16"></div>
                     </div>
-                  ))
-                ) : recentActivity && recentActivity.length > 0 ? (
-                  recentActivity.map((activity, index) => {
-                    const getActivityIcon = (type: string) => {
-                      switch (type) {
-                        case 'post':
-                          return (
-                            <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          );
-                        case 'connect':
-                          return (
-                            <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                            </svg>
-                          );
-                        case 'sync':
-                          return (
-                            <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                          );
-                        case 'error':
-                          return (
-                            <svg className="w-4 h-4 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          );
-                        default:
-                          return (
-                            <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          );
-                      }
-                    };
-
-                    return (
-                      <div key={activity.id} className="flex items-center space-x-4 p-3 bg-background rounded-button">
-                        <div className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center">
-                          {getActivityIcon(activity.type)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-text-primary">
-                            {activity.message}
-                          </p>
-                          <p className="text-xs text-text-muted">
-                            {new Date(activity.timestamp).toLocaleString()} 
-                            {activity.platform && ` • ${activity.platform}`}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  // Fallback to mock data or empty state
-                  [1, 2, 3, 4, 5].map((item) => (
-                    <div key={item} className="flex items-center space-x-4 p-3 bg-background rounded-button">
-                      <div className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center">
+                    <div className="w-16 h-6 bg-border rounded"></div>
+                  </div>
+                </Card>
+              ))
+            ) : connectedAccounts && connectedAccounts.length > 0 ? (
+              connectedAccounts.map((account) => (
+                <SocialAccountCard
+                  key={account.id}
+                  platform={account.platformId}
+                  username={account.username}
+                  followers={account.followers}
+                  status={account.status}
+                  icon={getPlatformIcon(account.platformId)}
+                  brandColor={getPlatformColor(account.platformId)}
+                />
+              ))
+            ) : (
+              // Fallback to mock data when no real accounts are available
+              mockSocialAccounts.map((account, index) => (
+                <SocialAccountCard
+                  key={index}
+                  platform={account.platform}
+                  username={account.username}
+                  followers={account.followers}
+                  status={account.status}
+                  icon={account.icon}
+                  brandColor={account.brandColor}
+                />
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+      
+      {/* Recent Activity - Full Width */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Activity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {activityLoading ? (
+              Array.from({ length: 5 }, (_, i) => (
+                <div key={i} className="flex items-center space-x-4 p-3 bg-background rounded-button animate-pulse">
+                  <div className="w-8 h-8 bg-border rounded-full"></div>
+                  <div className="flex-1">
+                    <div className="h-4 bg-border rounded w-3/4 mb-2"></div>
+                    <div className="h-3 bg-border rounded w-1/2"></div>
+                  </div>
+                </div>
+              ))
+            ) : recentActivity && recentActivity.length > 0 ? (
+              recentActivity.map((activity, index) => {
+                const getActivityIcon = (type: string) => {
+                  switch (type) {
+                    case 'post':
+                      return (
+                        <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      );
+                    case 'connect':
+                      return (
+                        <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                      );
+                    case 'sync':
+                      return (
+                        <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      );
+                    case 'error':
+                      return (
+                        <svg className="w-4 h-4 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      );
+                    default:
+                      return (
                         <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-text-primary">
-                          Posted "New product launch announcement" to Twitter
-                        </p>
-                        <p className="text-xs text-text-muted">
-                          2 hours ago • 24 likes, 12 retweets
-                        </p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                      );
+                  }
+                };
 
-        {/* Social Accounts */}
-        <div>
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Connected Accounts</CardTitle>
-                <Button variant="ghost" size="sm">
-                  Manage
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {accountsLoading ? (
-                Array.from({ length: 3 }, (_, i) => (
-                  <Card key={i} className="animate-pulse">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-6 h-6 bg-border rounded"></div>
-                      <div className="flex-1">
-                        <div className="h-4 bg-border rounded w-24 mb-2"></div>
-                        <div className="h-3 bg-border rounded w-20 mb-1"></div>
-                        <div className="h-3 bg-border rounded w-16"></div>
-                      </div>
-                      <div className="w-16 h-6 bg-border rounded"></div>
+                return (
+                  <div key={activity.id} className="flex items-center space-x-4 p-3 bg-background rounded-button">
+                    <div className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center">
+                      {getActivityIcon(activity.type)}
                     </div>
-                  </Card>
-                ))
-              ) : connectedAccounts && connectedAccounts.length > 0 ? (
-                connectedAccounts.map((account) => (
-                  <SocialAccountCard
-                    key={account.id}
-                    platform={account.platformId}
-                    username={account.username}
-                    followers={account.followers}
-                    status={account.status}
-                    icon={getPlatformIcon(account.platformId)}
-                    brandColor={getPlatformColor(account.platformId)}
-                  />
-                ))
-              ) : (
-                // Fallback to mock data when no real accounts are available
-                mockSocialAccounts.map((account, index) => (
-                  <SocialAccountCard
-                    key={index}
-                    platform={account.platform}
-                    username={account.username}
-                    followers={account.followers}
-                    status={account.status}
-                    icon={account.icon}
-                    brandColor={account.brandColor}
-                  />
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-text-primary">
+                        {activity.message}
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        {new Date(activity.timestamp).toLocaleString()} 
+                        {activity.platform && ` • ${activity.platform}`}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              // Fallback to mock data or empty state
+              [1, 2, 3, 4, 5].map((item) => (
+                <div key={item} className="flex items-center space-x-4 p-3 bg-background rounded-button">
+                  <div className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center">
+                    <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-text-primary">
+                      Posted "New product launch announcement" to Twitter
+                    </p>
+                    <p className="text-xs text-text-muted">
+                      2 hours ago • 24 likes, 12 retweets
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Quick Actions */}
       <Card>
